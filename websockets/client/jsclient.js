@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 
-const socket = new WebSocket('ws://localhost:3000');
+const socket = new WebSocket('ws://localhost:12345');
 const clientID = Math.random().toString(36).substr(2, 9);
 let sharedText = '';
 

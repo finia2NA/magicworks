@@ -4,7 +4,7 @@ const WebSocket = require('ws');
 let sharedText = '';
 
 // Create a WebSocket server
-const wss = new WebSocket.Server({ port: 3000 });
+const wss = new WebSocket.Server({ port: 12345 });
 
 // Broadcast function to send data to all connected clients
 const broadcast = (data) => {
@@ -37,6 +37,7 @@ wss.on('connection', (ws) => {
         sharedText = msg.data;
         // Broadcast the updated text to all clients
         broadcast(JSON.stringify({ type: 'text', data: sharedText }));
+        console.log('Text updated:', sharedText);
         break;
       default:
         console.log('Unknown message type:', msg.type);
