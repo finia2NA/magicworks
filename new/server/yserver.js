@@ -8,7 +8,7 @@ const doc = new Y.Doc();
 // Create a text type in the Yjs document
 const yText = doc.getText('text');
 
-doc.on("update", (update,origin) => {
+doc.on("update", (update, origin) => {
   console.log("hi")
 });
 

@@ -12,6 +12,7 @@ describe('CollaborativeTextEditor', () => {
     editor.addCharacter('o', 'user1');
 
     const documentText = editor.getTextWithAttribution();
+
     expect(documentText).toEqual([
       { char: 'H', author: 'user1' },
       { char: 'e', author: 'user1' },
@@ -53,4 +54,20 @@ describe('CollaborativeTextEditor', () => {
     const documentText = editor.getText();
     expect(documentText).toBe('Hello');
   });
+
+  test('insertion should work at the specified index', () => {
+    const editor = new CollaborativeTextEditor();
+    editor.addCharacter('a', 'user1');
+    editor.addCharacter('c', 'user1');
+    editor.addCharacter('b', 'user2', 1); // delayed b
+
+    const documentText = editor.getTextWithAttribution();
+
+    expect(documentText).toEqual([
+      { char: 'a', author: 'user1' },
+      { char: 'b', author: 'user2' },
+      { char: 'c', author: 'user1' },
+    ])
+  });
+
 });

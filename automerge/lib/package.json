@@ -12,6 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "y-websocket": "^2.0.4",
     "yjs": "^13.6.20"
   },
   "devDependencies": {
