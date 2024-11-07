@@ -94,8 +94,21 @@ describe('CollaborativeTextEditor', () => {
     editor.addCharacter('e', 'user1');
     editor.addCharacter('l', 'user2');
     editor.addCharacter('l', 'user2');
+    editor.addCharacter('o', 'user1');
 
-    editor.updateTo('Help', "user3");
+    editor.updateTo('Helsinki', "user3");
+
+    const updatedDocumentText = editor.getTextWithAttribution();
+    expect(updatedDocumentText).toEqual([
+      { char: 'H', author: 'user1' },
+      { char: 'e', author: 'user1' },
+      { char: 'l', author: 'user2' },
+      { char: 's', author: 'user3' },
+      { char: 'i', author: 'user3' },
+      { char: 'n', author: 'user3' },
+      { char: 'k', author: 'user3' },
+      { char: 'i', author: 'user3' },
+    ]);
 
 
   });

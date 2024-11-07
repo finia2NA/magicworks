@@ -26,12 +26,41 @@ class CollaborativeTextEditor {
   updateTo(newText: string, author: string) {
     // Find the difference between the texts, what needs to be deleted and added
     const oldText = this.getText();
-    const diff = diffChars(oldText, newText);
-    console.log(diff);
+    const diffs = diffChars(oldText, newText);
+    console.log(diffs);
 
     // go left-to-right through the indices where something needs to be modified, and apply the changes
     // for this, keep track of index shift due to deletions and insertions
+    let index = 0;
+    for (const diff of diffs) {
+      // skip case
+      if (!diff.added && !diff.removed) {
+        index += diff.value.length;
+      }
+      // deletion case
+      if (diff.removed && !diff.added) {
+        for (const _ of diff.value) {
+          this.removeCharacter(index);
+        }
+      }
 
+      // insertion case
+      if (diff.added && !diff.removed) {
+        for (const char of diff.value) {
+          this.addCharacter(char, author, index);
+          index++; // TODO: maybe +2?
+        }
+      }
+
+      // modification case
+      if (diff.added && diff.removed) {
+        console.log("modification case!");
+        for (const _ of diff.value) {
+          this.changeCharacter(diff.value, author, index);
+          index++;
+        }
+      }
+    }
   }
 
   // Method to add a character with attribution
