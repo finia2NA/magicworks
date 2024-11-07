@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { diffChars } from 'diff';
 
 class CollaborativeTextEditor {
   ydoc: Y.Doc;
@@ -22,6 +23,17 @@ class CollaborativeTextEditor {
     }
   }
 
+  updateTo(newText: string, author: string) {
+    // Find the difference between the texts, what needs to be deleted and added
+    const oldText = this.getText();
+    const diff = diffChars(oldText, newText);
+    console.log(diff);
+
+    // go left-to-right through the indices where something needs to be modified, and apply the changes
+    // for this, keep track of index shift due to deletions and insertions
+
+  }
+
   // Method to add a character with attribution
   addCharacter(char: string, author: string, index?: number) {
     if (char.length !== 1) {
@@ -42,6 +54,18 @@ class CollaborativeTextEditor {
     this.root.delete(index, 1);
   }
 
+  changeCharacter(char: string, author: string, index: number) {
+    if (char.length !== 1) {
+      throw new Error('Only single characters are allowed for now');
+    }
+    const charNode = this.root.get(index);
+    if (charNode instanceof Y.XmlText) {
+      charNode.delete(0, 1);
+      charNode.insert(0, char);
+      charNode.setAttribute('author', author);
+    }
+  }
+
   // Method to retrieve text with attribution
   getTextWithAttribution() {
     const result: { char: any; author: any; }[] = [];
@@ -56,13 +80,13 @@ class CollaborativeTextEditor {
   }
 
   // Method to get plain text without attribution
-  getText() {
+  getText(): string {
     return this.root.toArray().reduce((acc, node) => {
       if (node instanceof Y.XmlText) {
         acc += node.toString();
       }
       return acc;
-    });
+    }, '');
   }
 
   // Optionally, you can destroy the provider when no longer needed
