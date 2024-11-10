@@ -7,6 +7,7 @@ const wss = new WebSocket.Server({ port: 1234 });
 wss.on('connection', (ws) => {
   // Create a Yjs document when a new client connects
   const ydoc = new Y.Doc();
+  console.log(ydoc);
 
   // Create a WebSocket provider and sync the document across clients
   const provider = new WebsocketProvider('ws://localhost:1234', 'your-document-id', ydoc);

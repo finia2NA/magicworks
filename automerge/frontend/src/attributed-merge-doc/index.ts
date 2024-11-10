@@ -39,7 +39,7 @@ class CollaborativeTextEditor {
       }
       // deletion case
       if (diff.removed && !diff.added) {
-        for (const _ of diff.value) {
+        for (let i = 0; i < diff.value.length; i++) {
           this.removeCharacter(index);
         }
       }
@@ -48,14 +48,14 @@ class CollaborativeTextEditor {
       if (diff.added && !diff.removed) {
         for (const char of diff.value) {
           this.addCharacter(char, author, index);
-          index++; // TODO: maybe +2?
+          index++;
         }
       }
 
       // modification case
       if (diff.added && diff.removed) {
         console.log("modification case!");
-        for (const _ of diff.value) {
+        for (let i = 0; i < diff.value.length; i++) {
           this.changeCharacter(diff.value, author, index);
           index++;
         }
@@ -97,7 +97,7 @@ class CollaborativeTextEditor {
 
   // Method to retrieve text with attribution
   getTextWithAttribution() {
-    const result: { char: any; author: any; }[] = [];
+    const result: { char: string; author: string; }[] = [];
     this.root.toArray().forEach((node) => {
       if (node instanceof Y.XmlText) {
         const author = node.getAttribute('author');
