@@ -2,11 +2,16 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { diffChars } from 'diff';
 
+
 class CollaborativeTextValue {
   ydoc: Y.Doc;
   root: Y.XmlElement<{ [key: string]: string; }>;
   docName = "default";
   provider?: WebsocketProvider;
+  private isConnected: boolean = false;
+  private updateQueue: Array<() => void> = [];
+  private retryCount: number = 0;
+  private readonly MAX_RETRIES = 3;
 
   constructor(docID = "default", websocketUrl?: string) {
     this.ydoc = new Y.Doc();
@@ -17,95 +22,171 @@ class CollaborativeTextValue {
     }
 
     if (websocketUrl) {
-      this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc, { connect: true });
+      this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc, {
+        connect: true,
+        resyncInterval: 1000,  // Resync every second
+      });
+
+      this.setupConnectionHandlers();
     }
   }
 
-  updateTo(newText: string, author: string) {
-    // Start a transaction to batch all updates
-    this.ydoc.transact(() => {
-      const oldText = this.getText();
-      const diffs = diffChars(oldText, newText);
+  private setupConnectionHandlers() {
+    if (!this.provider) return;
 
-      // Calculate the absolute positions for each diff
-      let currentIndex = 0;
-      let deleteOffset = 0;
+    this.provider.on('status', ({ status }: { status: string }) => {
+      console.log('Connection status:', status);
 
-      for (const diff of diffs) {
-        if (!diff.added && !diff.removed) {
-          currentIndex += diff.value.length;
-          continue;
-        }
-
-        if (diff.removed) {
-          // Handle deletion
-          const deleteLength = diff.value.length;
-          const adjustedIndex = currentIndex - deleteOffset;
-          this.root.delete(adjustedIndex, deleteLength);
-          deleteOffset += deleteLength;
-        }
-
-        if (diff.added) {
-          // Handle addition by creating a single XML text node for the entire added segment
-          const adjustedIndex = currentIndex - deleteOffset;
-          const textNode = new Y.XmlText();
-          textNode.insert(0, diff.value);
-          textNode.setAttribute('author', author);
-          this.root.insert(adjustedIndex, [textNode]);
-          currentIndex += diff.value.length;
-        }
+      if (status === 'connected') {
+        this.isConnected = true;
+        this.retryCount = 0;
+        this.processUpdateQueue();
+      } else {
+        this.isConnected = false;
       }
+    });
+
+    this.provider.on('sync', (isSynced: boolean) => {
+      console.log('Sync status:', isSynced);
+      if (isSynced) {
+        this.processUpdateQueue();
+      }
+    });
+
+    // Listen for connection errors
+    this.provider?.ws?.addEventListener('error', (event) => {
+      console.error('WebSocket error:', event);
+      this.handleConnectionError();
     });
   }
 
-  // Method to add a character with attribution
-  addCharacter(char: string, author: string, index?: number) {
-    const textNode = new Y.XmlText();
-    textNode.insert(0, char);
-    textNode.setAttribute('author', author);
+  private async handleConnectionError() {
+    if (this.retryCount < this.MAX_RETRIES) {
+      this.retryCount++;
+      const delay = Math.min(1000 * Math.pow(2, this.retryCount), 10000); // Exponential backoff
+      console.log(`Retrying connection in ${delay}ms... (Attempt ${this.retryCount})`);
 
-    if (typeof index === 'undefined') {
-      this.root.push([textNode]);
+      await new Promise(resolve => setTimeout(resolve, delay));
+
+      if (this.provider) {
+        this.provider.connect();
+      }
     } else {
-      this.root.insert(index, [textNode]);
+      console.error('Max retry attempts reached');
+      // You might want to notify the user here
     }
   }
 
-  // Method to remove a character at a given index
-  removeCharacter(index: number) {
-    this.root.delete(index, 1);
+  private processUpdateQueue() {
+    while (this.updateQueue.length > 0) {
+      const update = this.updateQueue.shift();
+      if (update) {
+        update();
+      }
+    }
   }
 
-  // Method to retrieve text with attribution
-  getTextWithAttribution() {
-    const result: { char: string; author: string; }[] = [];
-    this.root.toArray().forEach((node) => {
-      if (node instanceof Y.XmlText) {
-        const author = node.getAttribute('author');
-        const text = node.toString();
-        // Split the text into characters but maintain the same author
-        for (const char of text) {
-          result.push({ char, author });
+  private queueUpdate(updateFn: () => void) {
+    return new Promise<void>((resolve, reject) => {
+      const wrappedUpdate = () => {
+        try {
+          updateFn();
+          resolve();
+        } catch (error) {
+          reject(error);
         }
+      };
+
+      if (this.isConnected) {
+        wrappedUpdate();
+      } else {
+        this.updateQueue.push(wrappedUpdate);
       }
     });
-    return result;
   }
 
-  // Method to get plain text without attribution
+  async updateTo(newText: string, author: string): Promise<void> {
+    const updateFn = () => {
+      this.ydoc.transact(() => {
+        try {
+          const oldText = this.getText();
+          const diffs = diffChars(oldText, newText);
+
+          let currentIndex = 0;
+          let deleteOffset = 0;
+
+          for (const diff of diffs) {
+            if (!diff.added && !diff.removed) {
+              currentIndex += diff.value.length;
+              continue;
+            }
+
+            if (diff.removed) {
+              const deleteLength = diff.value.length;
+              const adjustedIndex = currentIndex - deleteOffset;
+              this.root.delete(adjustedIndex, deleteLength);
+              deleteOffset += deleteLength;
+            }
+
+            if (diff.added) {
+              const adjustedIndex = currentIndex - deleteOffset;
+              const textNode = new Y.XmlText();
+              textNode.insert(0, diff.value);
+              textNode.setAttribute('author', author);
+              this.root.insert(adjustedIndex, [textNode]);
+              currentIndex += diff.value.length;
+            }
+          }
+        } catch (error) {
+          console.error('Error during text update:', error);
+          throw error; // Re-throw to be caught by the queue processor
+        }
+      }, this.origin);
+    };
+
+    return this.queueUpdate(updateFn);
+  }
+
+  private origin = 'update-origin-' + Math.random();
+
   getText(): string {
-    return this.root.toArray().reduce((acc, node) => {
-      if (node instanceof Y.XmlText) {
-        acc += node.toString();
-      }
-      return acc;
-    }, '');
+    try {
+      return this.root.toArray().reduce((acc, node) => {
+        if (node instanceof Y.XmlText) {
+          acc += node.toString();
+        }
+        return acc;
+      }, '');
+    } catch (error) {
+      console.error('Error getting text:', error);
+      return '';
+    }
+  }
+
+  getTextWithAttribution() {
+    try {
+      const result: { char: string; author: string; }[] = [];
+      this.root.toArray().forEach((node) => {
+        if (node instanceof Y.XmlText) {
+          const author = node.getAttribute('author');
+          const text = node.toString();
+          for (const char of text) {
+            result.push({ char, author });
+          }
+        }
+      });
+      return result;
+    } catch (error) {
+      console.error('Error getting attributed text:', error);
+      return [];
+    }
   }
 
   destroy() {
     if (this.provider) {
       this.provider.destroy();
     }
+    this.ydoc.destroy();
   }
 }
 
