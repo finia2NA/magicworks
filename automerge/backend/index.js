@@ -1,19 +1,45 @@
 import * as Y from 'yjs';
 import WebSocket from 'ws';
-import { WebsocketProvider } from 'y-websocket';
+import { setupWSConnection } from 'y-websocket/bin/utils';
+
+// Create a single shared document
+const docs = new Map();
+
+function getYDoc(docName) {
+  let doc = docs.get(docName);
+  if (!doc) {
+    doc = new Y.Doc();
+    docs.set(docName, doc);
+  }
+  return doc;
+}
 
 const wss = new WebSocket.Server({ port: 1234 });
 
-wss.on('connection', (ws) => {
-  // Create a Yjs document when a new client connects
-  const ydoc = new Y.Doc();
-  console.log(ydoc);
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'ws://localhost:1234');
+  const docName = url.searchParams.get('document') || 'default';
 
-  // Create a WebSocket provider and sync the document across clients
-  const provider = new WebsocketProvider('ws://localhost:1234', 'your-document-id', ydoc);
+  // Get or create the document
+  const doc = getYDoc(docName);
 
-  // When a message is received from the client, broadcast it to other clients
-  ws.on('message', (message) => {
-    // Handle incoming messages (optional logic for processing messages)
+  // Set up the connection using y-websocket's utility
+  setupWSConnection(ws, req, {
+    docName: docName,
+    gc: true
   });
+
+  console.log('Client connected to document:', docName);
+
+  ws.on('close', () => {
+    console.log('Client disconnected from document:', docName);
+  });
+});
+
+// Optional: Cleanup on server shutdown
+process.on('SIGINT', () => {
+  docs.forEach(doc => {
+    doc.destroy();
+  });
+  process.exit(0);
 });

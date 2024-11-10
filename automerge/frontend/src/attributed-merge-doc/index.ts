@@ -2,14 +2,13 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { diffChars } from 'diff';
 
-class CollaborativeTextEditor {
+class CollaborativeTextValue {
   ydoc: Y.Doc;
   root: Y.XmlElement<{ [key: string]: string; }>;
   docName = "default";
   provider?: WebsocketProvider;
 
   constructor(docID = "default", websocketUrl?: string) {
-    // Initialize the Yjs document and root XML element
     this.ydoc = new Y.Doc();
     this.root = this.ydoc.getXmlElement(`y-${docID}`);
     if (!this.root) {
@@ -17,64 +16,58 @@ class CollaborativeTextEditor {
       this.ydoc.getMap().set(`y-${docID}`, this.root);
     }
 
-    // Connect to the WebSocket server for document sync
     if (websocketUrl) {
-      this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc);
+      this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc, { connect: true });
     }
   }
 
   updateTo(newText: string, author: string) {
-    // Find the difference between the texts, what needs to be deleted and added
-    const oldText = this.getText();
-    const diffs = diffChars(oldText, newText);
-    console.log(diffs);
+    // Start a transaction to batch all updates
+    this.ydoc.transact(() => {
+      const oldText = this.getText();
+      const diffs = diffChars(oldText, newText);
 
-    // go left-to-right through the indices where something needs to be modified, and apply the changes
-    // for this, keep track of index shift due to deletions and insertions
-    let index = 0;
-    for (const diff of diffs) {
-      // skip case
-      if (!diff.added && !diff.removed) {
-        index += diff.value.length;
-      }
-      // deletion case
-      if (diff.removed && !diff.added) {
-        for (let i = 0; i < diff.value.length; i++) {
-          this.removeCharacter(index);
+      // Calculate the absolute positions for each diff
+      let currentIndex = 0;
+      let deleteOffset = 0;
+
+      for (const diff of diffs) {
+        if (!diff.added && !diff.removed) {
+          currentIndex += diff.value.length;
+          continue;
+        }
+
+        if (diff.removed) {
+          // Handle deletion
+          const deleteLength = diff.value.length;
+          const adjustedIndex = currentIndex - deleteOffset;
+          this.root.delete(adjustedIndex, deleteLength);
+          deleteOffset += deleteLength;
+        }
+
+        if (diff.added) {
+          // Handle addition by creating a single XML text node for the entire added segment
+          const adjustedIndex = currentIndex - deleteOffset;
+          const textNode = new Y.XmlText();
+          textNode.insert(0, diff.value);
+          textNode.setAttribute('author', author);
+          this.root.insert(adjustedIndex, [textNode]);
+          currentIndex += diff.value.length;
         }
       }
-
-      // insertion case
-      if (diff.added && !diff.removed) {
-        for (const char of diff.value) {
-          this.addCharacter(char, author, index);
-          index++;
-        }
-      }
-
-      // modification case
-      if (diff.added && diff.removed) {
-        console.log("modification case!");
-        for (let i = 0; i < diff.value.length; i++) {
-          this.changeCharacter(diff.value, author, index);
-          index++;
-        }
-      }
-    }
+    });
   }
 
   // Method to add a character with attribution
   addCharacter(char: string, author: string, index?: number) {
-    if (char.length !== 1) {
-      throw new Error('Only single characters are allowed for now');
-    }
-    const charNode = new Y.XmlText();
-    charNode.insert(0, char); // Insert the character
-    charNode.setAttribute('author', author); // Set the author attribute
-    if (!index) {
-      this.root.push([charNode]); // Add character node to the root element
+    const textNode = new Y.XmlText();
+    textNode.insert(0, char);
+    textNode.setAttribute('author', author);
+
+    if (typeof index === 'undefined') {
+      this.root.push([textNode]);
     } else {
-      this.root.insert(index, [charNode]); // Add character node to the root element
+      this.root.insert(index, [textNode]);
     }
   }
 
@@ -83,26 +76,17 @@ class CollaborativeTextEditor {
     this.root.delete(index, 1);
   }
 
-  changeCharacter(char: string, author: string, index: number) {
-    if (char.length !== 1) {
-      throw new Error('Only single characters are allowed for now');
-    }
-    const charNode = this.root.get(index);
-    if (charNode instanceof Y.XmlText) {
-      charNode.delete(0, 1);
-      charNode.insert(0, char);
-      charNode.setAttribute('author', author);
-    }
-  }
-
   // Method to retrieve text with attribution
   getTextWithAttribution() {
     const result: { char: string; author: string; }[] = [];
     this.root.toArray().forEach((node) => {
       if (node instanceof Y.XmlText) {
         const author = node.getAttribute('author');
-        const char = node.toString();
-        result.push({ char, author });
+        const text = node.toString();
+        // Split the text into characters but maintain the same author
+        for (const char of text) {
+          result.push({ char, author });
+        }
       }
     });
     return result;
@@ -118,7 +102,6 @@ class CollaborativeTextEditor {
     }, '');
   }
 
-  // Optionally, you can destroy the provider when no longer needed
   destroy() {
     if (this.provider) {
       this.provider.destroy();
@@ -126,4 +109,4 @@ class CollaborativeTextEditor {
   }
 }
 
-export default CollaborativeTextEditor;
+export default CollaborativeTextValue;
