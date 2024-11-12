@@ -3,16 +3,56 @@ import { WebsocketProvider } from 'y-websocket';
 import { diffChars } from 'diff';
 
 
+/**
+ * Represents a collaborative text editor that supports real-time synchronization and text attribution.
+ * Uses Yjs for CRDT-based document synchronization and WebSocket for network communication.
+ * 
+ * @class
+ * @example
+ * ```typescript
+ * const editor = new CollaborativeTextValue('docId', 'ws://server.com');
+ * await editor.updateTo('new text', 'author1');
+ * const text = editor.getText();
+ * const attribution = editor.getTextWithAttribution();
+ * ```
+ * 
+ * @property {Y.Doc} ydoc - The Yjs document instance managing the shared data structure
+ * @property {Y.XmlElement} root - The root XML element containing the document content
+ * @property {string} docName - The name/identifier of the document
+ * @property {WebsocketProvider} [provider] - Optional WebSocket provider for network synchronization
+ * 
+ * @throws {Error} When text update operations fail
+ * @throws {Error} When network connection cannot be established after max retries
+ * 
+ * Features:
+ * - Real-time collaborative editing
+ * - Character-level attribution tracking
+ * - Automatic conflict resolution
+ * - Connection error handling with exponential backoff
+ * - Update queueing for offline operations
+ */
 class CollaborativeTextValue {
   ydoc: Y.Doc;
   root: Y.XmlElement<{ [key: string]: string; }>;
   docName = "default";
   provider?: WebsocketProvider;
+  private origin = 'update-origin-' + Math.random();
   private isConnected: boolean = false;
   private updateQueue: Array<() => void> = [];
   private retryCount: number = 0;
   private readonly MAX_RETRIES = 3;
 
+  /**
+   * Creates a new instance of the document.
+   * @param docID - The unique identifier for the document. Defaults to "default".
+   * @param websocketUrl - Optional URL for WebSocket connection. If provided, establishes a real-time collaboration connection.
+   * @constructor
+   * 
+   * @remarks
+   * - Initializes a new Y.Doc instance
+   * - Creates or retrieves an XML element with the specified docID
+   * - If websocketUrl is provided, establishes WebSocket connection with auto-resync every second
+   */
   constructor(docID = "default", websocketUrl?: string) {
     this.ydoc = new Y.Doc();
     this.root = this.ydoc.getXmlElement(`y-${docID}`);
@@ -31,6 +71,19 @@ class CollaborativeTextValue {
     }
   }
 
+  /**
+   * Sets up event handlers for the WebSocket connection provider.
+   * Manages connection status, synchronization, and error handling.
+   * 
+   * Handles the following events:
+   * - 'status': Monitors connection status changes and processes pending updates when connected
+   * - 'sync': Triggers update queue processing when document synchronization is complete
+   * - 'error': Handles WebSocket connection errors
+   * 
+   * @private
+   * @returns {void}
+   * @throws {Error} If connection error occurs during WebSocket communication
+   */
   private setupConnectionHandlers() {
     if (!this.provider) return;
 
@@ -60,6 +113,17 @@ class CollaborativeTextValue {
     });
   }
 
+  /**
+   * Handles connection errors by implementing an exponential backoff retry mechanism.
+   * If the connection fails, it will attempt to reconnect multiple times with increasing delays.
+   * 
+   * The delay between retries follows an exponential pattern (2^retryCount seconds),
+   * capped at 10 seconds maximum delay between attempts.
+   * 
+   * @private
+   * @async
+   * @throws {Error} When maximum retry attempts are reached
+   */
   private async handleConnectionError() {
     if (this.retryCount < this.MAX_RETRIES) {
       this.retryCount++;
@@ -77,6 +141,13 @@ class CollaborativeTextValue {
     }
   }
 
+  /**
+   * Processes all pending updates in the update queue sequentially.
+   * Dequeues and executes each update function until the queue is empty.
+   * Updates are processed in FIFO (First In, First Out) order.
+   * 
+   * @private
+   */
   private processUpdateQueue() {
     while (this.updateQueue.length > 0) {
       const update = this.updateQueue.shift();
@@ -86,6 +157,15 @@ class CollaborativeTextValue {
     }
   }
 
+  /**
+   * Queues an update function to be executed when the document is connected.
+   * If the document is already connected, the update is executed immediately.
+   * 
+   * @param updateFn - The function containing the update operations to be executed
+   * @returns A Promise that resolves when the update is successfully executed or rejects if an error occurs
+   * 
+   * @throws Will reject the returned promise with any error thrown during the update execution
+   */
   private queueUpdate(updateFn: () => void) {
     return new Promise<void>((resolve, reject) => {
       const wrappedUpdate = () => {
@@ -105,6 +185,24 @@ class CollaborativeTextValue {
     });
   }
 
+  /**
+   * Updates the document's content with new text while preserving authorship information.
+   * Uses a diff-based approach to identify changes and applies them atomically within a transaction.
+   * 
+   * @param newText - The new text content to update the document to
+   * @param author - The identifier of the author making the changes
+   * 
+   * @throws {Error} If the text update operation fails
+   * 
+   * @remarks
+   * The update process:
+   * 1. Calculates character-level diffs between old and new text
+   * 2. Processes removals and additions sequentially
+   * 3. Maintains proper indexing accounting for previous deletions
+   * 4. Associates added text with author attribution
+   * 
+   * All changes are queued and executed within a transaction to ensure atomicity.
+   */
   async updateTo(newText: string, author: string): Promise<void> {
     const updateFn = () => {
       this.ydoc.transact(() => {
@@ -147,8 +245,16 @@ class CollaborativeTextValue {
     return this.queueUpdate(updateFn);
   }
 
-  private origin = 'update-origin-' + Math.random();
-
+  /**
+   * Retrieves the text content from the root node by concatenating all XML text nodes.
+   * 
+   * This method traverses the root node's array and combines all XmlText nodes into a single string.
+   * If any error occurs during the process, it returns an empty string and logs the error.
+   * 
+   * @returns {string} The concatenated text content from all XML text nodes, or an empty string if an error occurs
+   * 
+   * @throws {Error} Logs any error that occurs during text extraction to the console
+   */
   getText(): string {
     try {
       return this.root.toArray().reduce((acc, node) => {
@@ -163,6 +269,16 @@ class CollaborativeTextValue {
     }
   }
 
+  /**
+   * Retrieves the text content along with its author attribution.
+   * Each character in the text is paired with its corresponding author.
+   * 
+   * @returns An array of objects, where each object contains:
+   *          - char: A single character from the text
+   *          - author: The author attribution for that character
+   * 
+   * @throws {Error} Logs error to console and returns empty array if text extraction fails
+   */
   getTextWithAttribution() {
     try {
       const result: { char: string; author: string; }[] = [];
@@ -182,6 +298,11 @@ class CollaborativeTextValue {
     }
   }
 
+  /**
+   * Cleans up and releases resources used by the document.
+   * This method should be called when the document is no longer needed.
+   * It will destroy both the provider (if it exists) and the underlying Y.js document.
+   */
   destroy() {
     if (this.provider) {
       this.provider.destroy();
