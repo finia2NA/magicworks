@@ -54,7 +54,7 @@ class CollaborativeTextValue {
     this.content = this.ydoc.getArray<TextChunk>(`content-${docID}`);
     this.docName = docID;
 
-    if (websocketUrl) {  
+    if (websocketUrl) {
       this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc, {
         connect: true,
         resyncInterval: 1000,  // Resync every second
@@ -118,48 +118,43 @@ class CollaborativeTextValue {
    */
   async updateTo(newText: string, author: string): Promise<void> {
     this.ydoc.transact(() => {
-      try {
-        const oldText = this.getText();
-        const diffs = diffChars(oldText, newText);
+      // const oldText = this.getText();
 
-        let currentIndex = 0;
-        let accumulatedDeletes = 0;
+      // const a = "Hisense"
+      // const b = "Hispanic"
+      const a = this.getText();
+      const b = newText;
 
-        // First pass: calculate the ranges to delete
-        const deletions: { start: number; length: number; }[] = [];
-        for (const diff of diffs) {
-          if (diff.removed) {
-            deletions.push({ start: currentIndex - accumulatedDeletes, length: diff.value.length });
-            accumulatedDeletes += diff.value.length;
-          }
-          if (!diff.removed && !diff.added) {
-            currentIndex += diff.value.length;
+      const diffs = diffChars(a, b, { oneChangePerToken: true });
+
+      console.log('Diffs:', diffs);
+
+      let index = 0;
+      for (const diff of diffs) {
+        if (!diff.added && !diff.removed) {
+          index += diff.value.length;
+        }
+        if (diff.removed && !diff.added) {
+          for (const _ of diff.value) {
+            this.content.delete(index);
           }
         }
-
-        // Apply deletions from end to start to maintain correct indices
-        deletions.reverse().forEach(({ start, length }) => {
-          this.content.delete(start, length);
-        });
-
-        // Second pass: handle additions
-        currentIndex = 0;
-        for (const diff of diffs) {
-          if (diff.added) {
-            const chunk: TextChunk = {
-              text: diff.value,
-              author
-            };
-            this.content.insert(currentIndex, [chunk]);
-            currentIndex += diff.value.length;
-          } else if (!diff.removed) {
-            currentIndex += diff.value.length;
+        if (diff.added && !diff.removed) {
+          for (const char of diff.value) {
+            this.content.insert(index, [{ text: char, author }]);
+            index++;
           }
         }
-      } catch (error) {
-        console.error('Error during text update:', error);
-        throw error;
+        if (diff.added && diff.removed) {
+          for (const _ of diff.value) {
+            this.content.delete(index);
+            this.content.insert(index, [{ text: diff.value, author }]);
+            index++;
+          }
+        }
       }
+
+
     }, this.origin);
   }
 
