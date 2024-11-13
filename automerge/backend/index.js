@@ -14,9 +14,9 @@ function getYDoc(docName) {
   return doc;
 }
 
-const wss = new WebSocket.Server({ port: 1234 });
+const websocketServer = new WebSocket.Server({ port: 1234 });
 
-wss.on('connection', (ws, req) => {
+websocketServer.on('connection', (websocket, req) => {
   const url = new URL(req.url, 'ws://localhost:1234');
   const docName = url.searchParams.get('document') || 'default';
 
@@ -24,14 +24,17 @@ wss.on('connection', (ws, req) => {
   const doc = getYDoc(docName);
 
   // Set up the connection using y-websocket's utility
-  setupWSConnection(ws, req, {
+  setupWSConnection(websocket, req, {
     docName: docName,
-    gc: true
+    gc: true,
+    onchange: (event) => {
+      console.log('Broadcasting document update:', docName);
+    },
   });
 
   console.log('Client connected to document:', docName);
 
-  ws.on('close', () => {
+  websocket.on('close', () => {
     console.log('Client disconnected from document:', docName);
   });
 });
