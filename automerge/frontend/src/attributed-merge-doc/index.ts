@@ -2,7 +2,6 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { diffChars } from 'diff';
 
-
 /**
  * Represents a collaborative text editor that supports real-time synchronization and text attribution.
  * Uses Yjs for CRDT-based document synchronization and WebSocket for network communication.
@@ -28,8 +27,7 @@ import { diffChars } from 'diff';
  * - Real-time collaborative editing
  * - Character-level attribution tracking
  * - Automatic conflict resolution
- * - Connection error handling with exponential backoff
- * - Update queueing for offline operations
+ * - Built-in offline support via Yjs CRDT
  */
 class CollaborativeTextValue {
   ydoc: Y.Doc;
@@ -37,8 +35,6 @@ class CollaborativeTextValue {
   docName = "default";
   provider?: WebsocketProvider;
   private origin = 'update-origin-' + Math.random();
-  private isConnected: boolean = false;
-  private updateQueue: Array<() => void> = [];
   private retryCount: number = 0;
   private readonly MAX_RETRIES = 3;
 
@@ -76,9 +72,9 @@ class CollaborativeTextValue {
    * Manages connection status, synchronization, and error handling.
    * 
    * Handles the following events:
-   * - 'status': Monitors connection status changes and processes pending updates when connected
-   * - 'sync': Triggers update queue processing when document synchronization is complete
-   * - 'error': Handles WebSocket connection errors
+   * - 'status': Monitors connection status changes
+   * - 'sync': Monitors document synchronization status
+   * - 'error': Handles WebSocket connection errors with exponential backoff
    * 
    * @private
    * @returns {void}
@@ -89,21 +85,13 @@ class CollaborativeTextValue {
 
     this.provider.on('status', ({ status }: { status: string }) => {
       console.log('Connection status:', status);
-
       if (status === 'connected') {
-        this.isConnected = true;
         this.retryCount = 0;
-        this.processUpdateQueue();
-      } else {
-        this.isConnected = false;
       }
     });
 
     this.provider.on('sync', (isSynced: boolean) => {
       console.log('Sync status:', isSynced);
-      if (isSynced) {
-        this.processUpdateQueue();
-      }
     });
 
     // Listen for connection errors
@@ -142,50 +130,6 @@ class CollaborativeTextValue {
   }
 
   /**
-   * Processes all pending updates in the update queue sequentially.
-   * Dequeues and executes each update function until the queue is empty.
-   * Updates are processed in FIFO (First In, First Out) order.
-   * 
-   * @private
-   */
-  private processUpdateQueue() {
-    while (this.updateQueue.length > 0) {
-      const update = this.updateQueue.shift();
-      if (update) {
-        update();
-      }
-    }
-  }
-
-  /**
-   * Queues an update function to be executed when the document is connected.
-   * If the document is already connected, the update is executed immediately.
-   * 
-   * @param updateFn - The function containing the update operations to be executed
-   * @returns A Promise that resolves when the update is successfully executed or rejects if an error occurs
-   * 
-   * @throws Will reject the returned promise with any error thrown during the update execution
-   */
-  private queueUpdate(updateFn: () => void) {
-    return new Promise<void>((resolve, reject) => {
-      const wrappedUpdate = () => {
-        try {
-          updateFn();
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      if (this.isConnected) {
-        wrappedUpdate();
-      } else {
-        this.updateQueue.push(wrappedUpdate);
-      }
-    });
-  }
-
-  /**
    * Updates the document's content with new text while preserving authorship information.
    * Uses a diff-based approach to identify changes and applies them atomically within a transaction.
    * 
@@ -201,48 +145,44 @@ class CollaborativeTextValue {
    * 3. Maintains proper indexing accounting for previous deletions
    * 4. Associates added text with author attribution
    * 
-   * All changes are queued and executed within a transaction to ensure atomicity.
+   * All changes are executed within a transaction to ensure atomicity.
    */
   async updateTo(newText: string, author: string): Promise<void> {
-    const updateFn = () => {
-      this.ydoc.transact(() => {
-        try {
-          const oldText = this.getText();
-          const diffs = diffChars(oldText, newText);
+    this.ydoc.transact(() => {
+      try {
+        const oldText = this.getText();
+        const diffs = diffChars(oldText, newText);
 
-          let currentIndex = 0;
-          let deleteOffset = 0;
+        let currentIndex = 0;
+        let deleteOffset = 0;
 
-          for (const diff of diffs) {
-            if (!diff.added && !diff.removed) {
-              currentIndex += diff.value.length;
-              continue;
-            }
-
-            if (diff.removed) {
-              const deleteLength = diff.value.length;
-              const adjustedIndex = currentIndex - deleteOffset;
-              this.root.delete(adjustedIndex, deleteLength);
-              deleteOffset += deleteLength;
-            }
-
-            if (diff.added) {
-              const adjustedIndex = currentIndex - deleteOffset;
-              const textNode = new Y.XmlText();
-              textNode.insert(0, diff.value);
-              textNode.setAttribute('author', author);
-              this.root.insert(adjustedIndex, [textNode]);
-              currentIndex += diff.value.length;
-            }
+        for (const diff of diffs) {
+          if (!diff.added && !diff.removed) {
+            currentIndex += diff.value.length;
+            continue;
           }
-        } catch (error) {
-          console.error('Error during text update:', error);
-          throw error; // Re-throw to be caught by the queue processor
-        }
-      }, this.origin);
-    };
 
-    return this.queueUpdate(updateFn);
+          if (diff.removed) {
+            const deleteLength = diff.value.length;
+            const adjustedIndex = currentIndex - deleteOffset;
+            this.root.delete(adjustedIndex, deleteLength);
+            deleteOffset += deleteLength;
+          }
+
+          if (diff.added) {
+            const adjustedIndex = currentIndex - deleteOffset;
+            const textNode = new Y.XmlText();
+            textNode.insert(0, diff.value);
+            textNode.setAttribute('author', author);
+            this.root.insert(adjustedIndex, [textNode]);
+            currentIndex += diff.value.length;
+          }
+        }
+      } catch (error) {
+        console.error('Error during text update:', error);
+        throw error;
+      }
+    }, this.origin);
   }
 
   /**
