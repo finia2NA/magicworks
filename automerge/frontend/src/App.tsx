@@ -1,62 +1,17 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import CollaborativeTextValue from './attributed-merge-doc';
+import { useState, useRef, useMemo } from 'react';
+import useColabValue from './useColabValue';
 
-// Simple demo of syncing text.
-const SimpleDemo = () => {
-  // Configurable options
+const AwarenessDemo = () => {
   const docID = 'defaultDoc';
   const wsUrl = 'ws:localhost:1234';
-  const userID = useMemo(() => {
-    return `user-${Math.floor(Math.random() * 1000)}`;
-  }, []);
+  const userID = useMemo(() => `user-${Math.floor(Math.random() * 1000)}`, []);
 
-  // state where we store what is displayed in the textarea, and the reference to the yjs shared text objectF
-  const [text, setText] = useState('');
-  const [presentUsers, setPresentUsers] = useState<string[]>([]);
-  const valueRef = useRef<CollaborativeTextValue | null>(null);
+  // Use the custom hook
+  const { text, presentUsers, updateText } = useColabValue(docID, wsUrl, userID);
 
-  // Set up the syncing. Create a new Syncing object, which takes the docID and the URL of the server.
-  useEffect(() => {
-    const colabValue = new CollaborativeTextValue(docID, wsUrl, userID);
-    valueRef.current = colabValue;
-
-    // set the text to the current text in the shared object
-    setText(colabValue.getText());
-    const presentUsers = colabValue.getPresentUsers();
-    if (!presentUsers) return;
-    setPresentUsers(presentUsers);
-
-
-    // When the ydoc changes, update the text state. This will re-render the textarea with the new text.
-    const handleTextUpdate = () => {
-      setText(colabValue.getText());
-    };
-
-    const handleAwarenessUpdate = () => {
-      const presentUsers = colabValue.getPresentUsers();
-      if (!presentUsers) return;
-      setPresentUsers(presentUsers);
-    };
-
-    colabValue.ydoc.on('update', handleTextUpdate);
-    colabValue.awareness?.on('change', handleAwarenessUpdate);
-
-    // Cleanup on unmount
-    return () => {
-      colabValue.ydoc.off('update', handleTextUpdate);
-      colabValue.destroy();
-    };
-  }, [userID]);
-
-  // When the user types, we update the yjs doc to the new text.
-  const handleChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newtext = e.target.value;
-    setText(newtext);
-    try {
-      await valueRef.current?.updateTo(newtext, userID);
-    } catch (error) {
-      console.error('Failed to update text:', error);
-    }
+  // Handle text changes
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    updateText(e.target.value);
   };
 
   return (
@@ -74,50 +29,21 @@ const SimpleDemo = () => {
       />
     </>
   );
-}
+};
 
-// More complex demo, showing attributed text with different colors.
-const ComplexDemo = () => {
-  const [text, setText] = useState('');
-  const [attributedText, setAttributedText] = useState<{ char: string; author: string; }[]>([]);
-  const valueRef = useRef<CollaborativeTextValue | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // username is set to color (this is not how it is done in real applications)
+const AttributionDemo = () => {
+  const docID = 'default';
+  const wsUrl = 'ws:localhost:1234';
   const userName = useMemo(() => {
     const randomValue = Math.random();
-    const hexString = `#${Math.floor(randomValue * 0xFFFFFF).toString(16).padStart(6, '0')}`;
-    return hexString;
+    return `#${Math.floor(randomValue * 0xFFFFFF).toString(16).padStart(6, '0')}`;
   }, []);
 
-  useEffect(() => {
-    const editor = new CollaborativeTextValue("default", "ws:localhost:1234");
-    valueRef.current = editor;
+  const { text, attributedText, updateText } = useColabValue(docID, wsUrl, userName);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    setText(editor.getText());
-    setAttributedText(editor.getTextWithAttribution());
-
-    const updateHandler = () => {
-      setText(editor.getText());
-      setAttributedText(editor.getTextWithAttribution());
-    };
-
-    editor.ydoc.on('update', updateHandler);
-
-    return () => {
-      editor.ydoc.off('update', updateHandler);
-      editor.destroy();
-    };
-  }, []);
-
-  const handleChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newtext = e.target.value;
-    setText(newtext);
-    try {
-      await valueRef.current?.updateTo(newtext, userName);
-    } catch (error) {
-      console.error('Failed to update text:', error);
-    }
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    updateText(e.target.value);
   };
 
   const handleClick = () => {
@@ -127,7 +53,6 @@ const ComplexDemo = () => {
   return (
     <div className="max-w-2xl mx-auto p-4">
       <div className="relative min-h-[200px] border rounded-lg p-4 bg-white">
-        {/* Hidden textarea for input handling */}
         <textarea
           ref={textareaRef}
           value={text}
@@ -135,8 +60,6 @@ const ComplexDemo = () => {
           className="absolute inset-0 opacity-0 w-full h-full resize-none cursor-text"
           spellCheck={false}
         />
-
-        {/* Visible text display */}
         <div
           onClick={handleClick}
           className="font-mono whitespace-pre-wrap break-words"
@@ -152,27 +75,26 @@ const ComplexDemo = () => {
               {char.char || ' '}
             </span>
           ))}
-          {/* Show cursor position with a blinking caret */}
           <span className="animate-pulse">|</span>
         </div>
       </div>
     </div>
   );
-}
+};
 
 const App = () => {
-  const [isSimpleDemo, setIsSimpleDemo] = useState(true);
+  const [demoType, setDemoType] = useState(true);
   return (
     <div>
       <div className="flex justify-center p-4">
         <button
           className="p-2 bg-blue-500 text-white rounded-lg"
-          onClick={() => setIsSimpleDemo(!isSimpleDemo)}
+          onClick={() => setDemoType(!demoType)}
         >
           Toggle Demo
         </button>
       </div>
-      {isSimpleDemo ? <SimpleDemo /> : <ComplexDemo />}
+      {demoType ? <AwarenessDemo /> : <AttributionDemo />}
     </div>
   )
 };
