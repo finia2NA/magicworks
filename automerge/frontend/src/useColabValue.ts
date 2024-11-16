@@ -55,12 +55,28 @@ function useColabValue(docID: string, wsUrl: string, userID: string) {
     }
   };
 
-  // Return the current state and the update function
+  // Undo the last change
+  const undo = () => {
+    valueRef.current?.undo();
+    setText(valueRef.current?.getText() || '');
+    setAttributedText(valueRef.current?.getTextWithAttribution() || []);
+  };
+
+  // Redo the last undone change
+  const redo = () => {
+    valueRef.current?.redo();
+    setText(valueRef.current?.getText() || '');
+    setAttributedText(valueRef.current?.getTextWithAttribution() || []);
+  };
+
+  // Return the current state and the update/undo/redo functions
   return {
     text,
     attributedText,
     presentUsers,
     updateText,
+    undo,
+    redo,
   };
 }
 

@@ -33,11 +33,13 @@ interface TextChunk {
  * - Character-level attribution tracking
  * - Automatic conflict resolution
  * - Built-in offline support via Yjs CRDT
+ * - Undo/redo functionality
  */
 class CollaborativeTextValue {
   ydoc: Y.Doc;
   awareness;
   content: Y.Array<TextChunk>;
+  undoManager: Y.UndoManager;
   docName = "default";
   provider?: WebsocketProvider;
   private origin = 'update-origin-' + Math.random();
@@ -53,6 +55,9 @@ class CollaborativeTextValue {
   constructor(docID = "default", websocketUrl?: string, userID?: string) {
     this.ydoc = new Y.Doc();
     this.content = this.ydoc.getArray<TextChunk>(`content-${docID}`);
+    this.undoManager = new Y.UndoManager(this.content, {
+      trackedOrigins: new Set([this.origin]),
+    });
     this.docName = docID;
 
     // early return if no websocket url is provided
@@ -129,7 +134,6 @@ class CollaborativeTextValue {
   async updateTo(newText: string, author: string): Promise<void> {
     this.ydoc.transact(() => {
       const oldText = this.getText();
-
       const diffs = diffChars(oldText, newText, { oneChangePerToken: true });
 
       console.log('Diffs:', diffs);
@@ -196,7 +200,7 @@ class CollaborativeTextValue {
   }
 
   getPresentUsers() {
-    const states = this.awareness?.getStates()
+    const states = this.awareness?.getStates();
     if (!states) return null;
 
     const users: string[] = Array.from(states.keys()).map((key) => {
@@ -207,12 +211,24 @@ class CollaborativeTextValue {
   }
 
   /**
-   * Cleans up and releases resources used by the document.
+   * Undo the last change.
    */
+  undo() {
+    this.undoManager.undo();
+  }
+
+  /**
+   * Redo the last undone change.
+   */
+  redo() {
+    this.undoManager.redo();
+  }
+
   destroy() {
     if (this.provider) {
       this.provider.destroy();
     }
+    this.undoManager.destroy(); // Clean up the undo manager
     this.ydoc.destroy();
   }
 }
