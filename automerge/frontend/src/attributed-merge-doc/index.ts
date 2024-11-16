@@ -118,14 +118,9 @@ class CollaborativeTextValue {
    */
   async updateTo(newText: string, author: string): Promise<void> {
     this.ydoc.transact(() => {
-      // const oldText = this.getText();
+      const oldText = this.getText();
 
-      // const a = "Hisense"
-      // const b = "Hispanic"
-      const a = this.getText();
-      const b = newText;
-
-      const diffs = diffChars(a, b, { oneChangePerToken: true });
+      const diffs = diffChars(oldText, newText, { oneChangePerToken: true });
 
       console.log('Diffs:', diffs);
 
@@ -135,7 +130,7 @@ class CollaborativeTextValue {
           index += diff.value.length;
         }
         if (diff.removed && !diff.added) {
-          for (const _ of diff.value) {
+          for (let i = 0; i < diff.value.length; i++) {
             this.content.delete(index);
           }
         }
@@ -146,7 +141,7 @@ class CollaborativeTextValue {
           }
         }
         if (diff.added && diff.removed) {
-          for (const _ of diff.value) {
+          for (let i = 0; i < diff.value.length; i++) {
             this.content.delete(index);
             this.content.insert(index, [{ text: diff.value, author }]);
             index++;
