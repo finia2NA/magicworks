@@ -36,6 +36,7 @@ interface TextChunk {
  */
 class CollaborativeTextValue {
   ydoc: Y.Doc;
+  awareness;
   content: Y.Array<TextChunk>;
   docName = "default";
   provider?: WebsocketProvider;
@@ -49,19 +50,28 @@ class CollaborativeTextValue {
    * @param websocketUrl - Optional URL for WebSocket connection. If provided, establishes a real-time collaboration connection.
    * @constructor
    */
-  constructor(docID = "default", websocketUrl?: string) {
+  constructor(docID = "default", websocketUrl?: string, userID?: string) {
     this.ydoc = new Y.Doc();
     this.content = this.ydoc.getArray<TextChunk>(`content-${docID}`);
     this.docName = docID;
 
-    if (websocketUrl) {
-      this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc, {
-        connect: true,
-        resyncInterval: 1000,  // Resync every second
-      });
+    // early return if no websocket url is provided
+    if (!websocketUrl) return;
 
-      this.setupConnectionHandlers();
-    }
+    this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc, {
+      connect: true,
+      resyncInterval: 1000,  // Resync every second
+    });
+
+    this.setupConnectionHandlers();
+
+    // Early return if no user ID is provided
+    if (!userID) return;
+
+    this.awareness = this.provider.awareness
+    this.awareness.setLocalStateField('user', {
+      name: userID,
+    });
   }
 
   /**
@@ -183,6 +193,17 @@ class CollaborativeTextValue {
       console.error('Error getting attributed text:', error);
       return [];
     }
+  }
+
+  getPresentUsers() {
+    const states = this.awareness?.getStates()
+    if (!states) return null;
+
+    const users: string[] = Array.from(states.keys()).map((key) => {
+      return states.get(key)?.user.name;
+    });
+
+    return users;
   }
 
   /**

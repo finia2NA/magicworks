@@ -5,34 +5,48 @@ import CollaborativeTextValue from './attributed-merge-doc';
 const SimpleDemo = () => {
   // Configurable options
   const docID = 'defaultDoc';
-  const userID = 'defaultUser';
   const wsUrl = 'ws:localhost:1234';
+  const userID = useMemo(() => {
+    return `user-${Math.floor(Math.random() * 1000)}`;
+  }, []);
 
   // state where we store what is displayed in the textarea, and the reference to the yjs shared text objectF
   const [text, setText] = useState('');
+  const [presentUsers, setPresentUsers] = useState<string[]>([]);
   const valueRef = useRef<CollaborativeTextValue | null>(null);
 
   // Set up the syncing. Create a new Syncing object, which takes the docID and the URL of the server.
   useEffect(() => {
-    const editor = new CollaborativeTextValue(docID, wsUrl);
-    valueRef.current = editor;
+    const colabValue = new CollaborativeTextValue(docID, wsUrl, userID);
+    valueRef.current = colabValue;
 
     // set the text to the current text in the shared object
-    setText(editor.getText());
+    setText(colabValue.getText());
+    const presentUsers = colabValue.getPresentUsers();
+    if (!presentUsers) return;
+    setPresentUsers(presentUsers);
+
 
     // When the ydoc changes, update the text state. This will re-render the textarea with the new text.
-    const updateHandler = () => {
-      setText(editor.getText());
+    const handleTextUpdate = () => {
+      setText(colabValue.getText());
     };
 
-    editor.ydoc.on('update', updateHandler);
+    const handleAwarenessUpdate = () => {
+      const presentUsers = colabValue.getPresentUsers();
+      if (!presentUsers) return;
+      setPresentUsers(presentUsers);
+    };
+
+    colabValue.ydoc.on('update', handleTextUpdate);
+    colabValue.awareness?.on('change', handleAwarenessUpdate);
 
     // Cleanup on unmount
     return () => {
-      editor.ydoc.off('update', updateHandler);
-      editor.destroy();
+      colabValue.ydoc.off('update', handleTextUpdate);
+      colabValue.destroy();
     };
-  }, []);
+  }, [userID]);
 
   // When the user types, we update the yjs doc to the new text.
   const handleChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -46,10 +60,19 @@ const SimpleDemo = () => {
   };
 
   return (
-    <textarea
-      value={text}
-      onChange={handleChange}
-    />
+    <>
+      <h2>Present Users</h2>
+      <ul>
+        {presentUsers.map((user, index) => (
+          <li key={index}>{user}</li>
+        ))}
+      </ul>
+      <h2>Text</h2>
+      <textarea
+        value={text}
+        onChange={handleChange}
+      />
+    </>
   );
 }
 
@@ -138,7 +161,7 @@ const ComplexDemo = () => {
 }
 
 const App = () => {
-  const [isSimpleDemo, setIsSimpleDemo] = useState(false);
+  const [isSimpleDemo, setIsSimpleDemo] = useState(true);
   return (
     <div>
       <div className="flex justify-center p-4">
