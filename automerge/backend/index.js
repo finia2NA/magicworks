@@ -18,7 +18,7 @@ const websocketServer = new WebSocket.Server({ port: 1234 });
 
 websocketServer.on('connection', (websocket, req) => {
   const url = new URL(req.url, 'ws://localhost:1234');
-  const docName = url.searchParams.get('document') || 'default';
+  const docName = url.pathname.slice(1);
 
   // Get or create the document
   const doc = getYDoc(docName);

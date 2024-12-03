@@ -32,14 +32,14 @@ function useColabValue(docID: string, wsUrl: string, userID: string) {
     // Attach event listeners
     colabValue.ydoc.on('update', handleTextUpdate);
     if (colabValue.awareness) {
-      colabValue.awareness.on('change', handleAwarenessUpdate);
+      colabValue.awareness.on('update', handleAwarenessUpdate);
     }
 
     // Cleanup on unmount
     return () => {
       colabValue.ydoc.off('update', handleTextUpdate);
       if (colabValue.awareness) {
-        colabValue.awareness.off('change', handleAwarenessUpdate);
+        colabValue.awareness.off('update', handleAwarenessUpdate);
       }
       colabValue.destroy();
     };

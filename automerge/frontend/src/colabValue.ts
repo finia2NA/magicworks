@@ -40,7 +40,7 @@ class CollaborativeTextValue {
   awareness;
   content: Y.Array<TextChunk>;
   undoManager: Y.UndoManager;
-  docName = "default";
+  docName: string;
   provider?: WebsocketProvider;
   private origin = 'update-origin-' + Math.random();
   private retryCount: number = 0;
@@ -48,22 +48,22 @@ class CollaborativeTextValue {
 
   /**
    * Creates a new instance of the document.
-   * @param docID - The unique identifier for the document. Defaults to "default".
+   * @param docName - The unique identifier for the document. Defaults to "default".
    * @param websocketUrl - Optional URL for WebSocket connection. If provided, establishes a real-time collaboration connection.
    * @constructor
    */
-  constructor(docID = "default", websocketUrl?: string, userID?: string) {
+  constructor(docName = "default", websocketUrl?: string, userID?: string) {
     this.ydoc = new Y.Doc();
-    this.content = this.ydoc.getArray<TextChunk>(`content-${docID}`);
+    this.content = this.ydoc.getArray<TextChunk>(`content-${docName}`);
     this.undoManager = new Y.UndoManager(this.content, {
       trackedOrigins: new Set([this.origin]),
     });
-    this.docName = docID;
+    this.docName = docName;
 
     // early return if no websocket url is provided
     if (!websocketUrl) return;
 
-    this.provider = new WebsocketProvider(websocketUrl, docID, this.ydoc, {
+    this.provider = new WebsocketProvider(websocketUrl, docName, this.ydoc, {
       connect: true,
       resyncInterval: 1000,  // Resync every second
     });
