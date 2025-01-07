@@ -1,5 +1,5 @@
 # Starting point:
-# def nth_prime(n):
+# def nth_prime_student(n):
 #  # TODO: write a function that returns the n-th prime number
 #     pass
 
