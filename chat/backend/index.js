@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { Server } = require('socket.io');
 
+// This part creates the socket.io server
 const io = new Server({
   cors: {
     origin: "*", // In production, replace with your frontend domain
@@ -9,9 +10,11 @@ const io = new Server({
   }
 });
 
-// Stub for database operations
+// This part creates the db object with methods to save and fetch messages
 const db = {
+  // Called when sving a message
   async saveMessage(content, roomName, timestamp, socketId, username) {
+    // We get the room. if it does not exist, we create it
     try {
       // Find or create the room by name
       let room = await prisma.room.findUnique({
@@ -25,6 +28,7 @@ const db = {
         });
       }
 
+      // We save the message to the database
       // Save the message
       const message = await prisma.message.create({
         data: {
@@ -43,6 +47,7 @@ const db = {
     }
   },
 
+  // Getting messages from the database
   async getMessages(roomName) {
     try {
       // Find or create the room by name
@@ -72,11 +77,13 @@ const db = {
 };
 
 // Socket.IO connection handling
+// This one is called when a client connects to the server.
 io.on('connection', async (socket) => {
   console.log('Client connected:', socket.id);
 
   // Handle room joining
   socket.on('join_room', async (roomName) => {
+    // When joining a room, we fetch the message history and send it to the client
     try {
       // Join room and ensure it exists
       const messages = await db.getMessages(roomName);
@@ -93,6 +100,7 @@ io.on('connection', async (socket) => {
 
   // Handle new messages
   socket.on('send_message', async (messageData) => {
+    // When receiving a message, we save it to the database and broadcast it to all clients in the room
     try {
       const room = Array.from(socket.rooms)[1]; // Get current room
       if (!room) {
