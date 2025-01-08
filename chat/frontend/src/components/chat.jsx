@@ -3,9 +3,15 @@ import PropTypes from 'prop-types';
 import { io } from 'socket.io-client';
 
 const ChatRoom = ({ room = 'default', username }) => {
+  // State to store prev. messages
   const [messages, setMessages] = useState([]);
+  // State to store new message
   const [newMessage, setNewMessage] = useState('');
+
+  // state to store the connection to the server
   const [socket, setSocket] = useState(null);
+
+  // Used to scroll to the bottom of the chat
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -13,25 +19,37 @@ const ChatRoom = ({ room = 'default', username }) => {
   };
 
   useEffect(() => {
+    // When the component loads, we connect to the server
+    // TODO: change port if it clashes
     const newSocket = io('http://localhost:3000');
     setSocket(newSocket);
 
+    // We define what happens when certain events happen
     newSocket.on('connect', () => {
+      // The connect event is fired when the socket connects to the server
       console.log('Connected to server');
+      // It then makes a request to the server to get all the messages in the room
       newSocket.emit('join_room', room);
     });
 
     newSocket.on('message_history', (history) => {
+      // This is run when the answer from the server to our request for message history is received
+      // we just set the messages state to the history
       setMessages(history);
       scrollToBottom();
     });
 
     newSocket.on('new_message', (message) => {
+      // This is run when a new message is received from the server
+      // (Someone else sent a message, we are receiving it now)
+      // We just add it to the history
       setMessages(prev => [...prev, message]);
       scrollToBottom();
     });
 
     newSocket.on('message_sent', (message) => {
+      // This is run when the server confirms that our message was received
+      // It does the same as the new_message event
       setMessages(prev => [...prev, message]);
       scrollToBottom();
     });
@@ -41,6 +59,7 @@ const ChatRoom = ({ room = 'default', username }) => {
     });
 
     return () => {
+      // When the component unmounts, we close the connection
       newSocket.close();
     };
   }, [room]);
@@ -72,11 +91,10 @@ const ChatRoom = ({ room = 'default', username }) => {
                 className={`flex ${msg.senderId === socket?.id ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[70%] rounded-lg p-3 ${
-                    msg.senderId === socket?.id
+                  className={`max-w-[70%] rounded-lg p-3 ${msg.senderId === socket?.id
                       ? 'bg-blue-500 text-white'
                       : 'bg-gray-100'
-                  }`}
+                    }`}
                 >
                   <div className="text-xs opacity-75 mb-1">
                     {msg.username || 'Anonymous'}
