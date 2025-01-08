@@ -1,3 +1,5 @@
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 const { Server } = require('socket.io');
 
 const io = new Server({
@@ -9,23 +11,63 @@ const io = new Server({
 
 // Stub for database operations
 const db = {
-  async saveMessage(message, room, timestamp) {
-    // TODO: Implement MongoDB save operation
-    console.log('Saving message:', { message, room, timestamp });
-    return true;
+  async saveMessage(content, roomName, timestamp, socketId, username) {
+    try {
+      // Find or create the room by name
+      let room = await prisma.room.findUnique({
+        where: { name: roomName },
+      });
+
+      if (!room) {
+        // Create the room if it doesn't exist
+        room = await prisma.room.create({
+          data: { name: roomName },
+        });
+      }
+
+      // Save the message
+      const message = await prisma.message.create({
+        data: {
+          content,
+          roomId: room.id,
+          socketId,
+          username: username || 'Anonymous', // Use 'Anonymous' if no username is provided
+          createdAt: timestamp,
+        },
+      });
+
+      return message;
+    } catch (error) {
+      console.error('Error saving message:', error);
+      throw error;
+    }
   },
 
-  async getMessages(room) {
-    // TODO: Implement MongoDB fetch operation
-    console.log('Fetching messages for room:', room);
-    return [
-      // Example message format
-      {
-        content: 'Welcome to the chat!',
-        timestamp: new Date(),
-        room: room
+  async getMessages(roomName) {
+    try {
+      // Find or create the room by name
+      let room = await prisma.room.findUnique({
+        where: { name: roomName },
+      });
+
+      if (!room) {
+        // Create the room if it doesn't exist
+        room = await prisma.room.create({
+          data: { name: roomName },
+        });
       }
-    ];
+
+      // Fetch messages for the room
+      const messages = await prisma.message.findMany({
+        where: { roomId: room.id },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      return messages;
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      throw error;
+    }
   }
 };
 
@@ -34,53 +76,54 @@ io.on('connection', async (socket) => {
   console.log('Client connected:', socket.id);
 
   // Handle room joining
-  socket.on('join_room', async (room) => {
-    // Leave previous rooms (if any)
-    socket.rooms.forEach(room => {
-      if (room !== socket.id) { // Socket.IO automatically adds socket.id as a room
-        socket.leave(room);
-      }
-    });
-
-    // Join new room
-    socket.join(room);
-    console.log(`Client ${socket.id} joined room: ${room}`);
-
+  socket.on('join_room', async (roomName) => {
     try {
-      // Fetch and send message history
-      const messages = await db.getMessages(room);
+      // Join room and ensure it exists
+      const messages = await db.getMessages(roomName);
+      socket.join(roomName);
+      console.log(`Client ${socket.id} joined room: ${roomName}`);
+  
+      // Send message history
       socket.emit('message_history', messages);
     } catch (error) {
-      console.error('Error fetching message history:', error);
-      socket.emit('error', 'Error loading message history');
+      console.error('Error joining room:', error);
+      socket.emit('error', 'Error joining room');
     }
   });
 
   // Handle new messages
   socket.on('send_message', async (messageData) => {
     try {
-      const room = Array.from(socket.rooms)[1]; // Get current room (excluding socket.id room)
+      const room = Array.from(socket.rooms)[1]; // Get current room
       if (!room) {
         socket.emit('error', 'Not connected to any room');
         return;
       }
 
+      const { content, username } = messageData;
+
       const message = {
-        ...messageData,
+        content,
         timestamp: new Date(),
-        room: room,
-        senderId: socket.id
+        room,
+        senderId: socket.id,
+        username: username || 'Anonymous', // Use 'Anonymous' if username is not provided
       };
 
       // Save to database
-      await db.saveMessage(message.content, room, message.timestamp);
+      const savedMessage = await db.saveMessage(
+        content,
+        room,
+        message.timestamp,
+        socket.id,
+        message.username
+      );
 
       // Broadcast to all clients in the room except sender
-      socket.to(room).emit('new_message', message);
+      socket.to(room).emit('new_message', savedMessage);
 
       // Confirm message receipt to sender
-      socket.emit('message_sent', message);
-
+      socket.emit('message_sent', savedMessage);
     } catch (error) {
       console.error('Error processing message:', error);
       socket.emit('error', 'Error processing message');
