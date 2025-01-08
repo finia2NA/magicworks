@@ -77,23 +77,26 @@ const db = {
 };
 
 // Socket.IO connection handling
-// This one is called when a client connects to the server.
+// All the "on" events are triggered by the client making a call of that name to us.
 io.on('connection', async (socket) => {
+  // This one is called when a client connects to the server.
   console.log('Client connected:', socket.id);
 
   // Handle room joining
   socket.on('join_room', async (roomName) => {
-    // When joining a room, we fetch the message history and send it to the client
+    // This is run when the client wants to join a room
+    // We fetch the message history and send it to the client.
     try {
       // Join room and ensure it exists
       const messages = await db.getMessages(roomName);
       socket.join(roomName);
       console.log(`Client ${socket.id} joined room: ${roomName}`);
   
-      // Send message history
+      // Send message history to the client. This will trigger the 'message_history' event on the client
       socket.emit('message_history', messages);
     } catch (error) {
       console.error('Error joining room:', error);
+      // If we have an error, send the error event to the client so it knows. Again, this triggers the 'error' event on the client
       socket.emit('error', 'Error joining room');
     }
   });
@@ -127,10 +130,11 @@ io.on('connection', async (socket) => {
         message.username
       );
 
-      // Broadcast to all clients in the room except sender
+      // Broadcast to all clients in the room except sender. This triggers the 'new_message' event on the client
       socket.to(room).emit('new_message', savedMessage);
 
-      // Confirm message receipt to sender
+      // Confirm message receipt to sender. Only when the sender gets this request, the message is shown on their screen.
+      // We also send the message to the sender, so it doesn't have to deal with storing the message itself
       socket.emit('message_sent', savedMessage);
     } catch (error) {
       console.error('Error processing message:', error);
