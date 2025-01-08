@@ -83,7 +83,7 @@ const ChatRoom = ({ room = 'default', username }) => {
                   </div>
                   <p>{msg.content}</p>
                   <span className="text-xs opacity-75">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
+                    {new Date(msg.createdAt).toLocaleTimeString()}
                   </span>
                 </div>
               </div>
